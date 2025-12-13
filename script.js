@@ -566,8 +566,8 @@ function initializeImagePreview() {
     console.log('📚 Initializing book preview with page flip effect...');
     
     const pages = [
-        { left: '/public/images/1.png', right: '/public/images/2.png' }, // Spread 1: pages 1-2
-        { left: '/public/images/3.png', right: '/public/images/4.png' }  // Spread 2: pages 3-4
+        { left: 'public/images/1.png', right: 'public/images/2.png' }, // Spread 1: pages 1-2
+        { left: 'public/images/3.png', right: 'public/images/4.png' }  // Spread 2: pages 3-4
     ];
     
     let currentSpread = 0;
@@ -1379,3 +1379,4 @@ window.addEventListener('scroll', () => {
     document.body.classList.remove('scrolling');
   }, 300); // Adjust timeout as needed
 });
+
