@@ -48,12 +48,8 @@ function initializeWebsite() {
     // Initialize autumn effects
     initializeAutumnEffects();
     
-    // Wait for PDF.js to be ready, then initialize PDF viewer
-    setTimeout(() => {
-        initializePDFViewer();
-        // Also initialize the simplified image preview (4 pages)
-        initializeImagePreview();
-    }, 1000);
+    // Initialize the image preview (4 pages)
+    initializeImagePreview();
     
     console.log('✨ Website initialized successfully!');
 }
@@ -416,6 +412,11 @@ function showPDFPlaceholder() {
     console.log('📄 Showing PDF placeholder...');
     
     const canvas = document.getElementById('pdf-canvas');
+    if (!canvas) {
+        console.warn('⚠️ PDF canvas element not found, skipping placeholder');
+        return;
+    }
+    
     const ctx = canvas.getContext('2d');
     
     // Clear canvas
@@ -1379,4 +1380,3 @@ window.addEventListener('scroll', () => {
     document.body.classList.remove('scrolling');
   }, 300); // Adjust timeout as needed
 });
-
