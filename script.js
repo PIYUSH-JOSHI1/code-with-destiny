@@ -15,8 +15,8 @@ const EMAILJS_PUBLIC_KEY = 'C-UaBjlMKdLfR-XjR';
 // Initialize EmailJS
 emailjs.init(EMAILJS_PUBLIC_KEY);
 
-// Initialize GSAP
-gsap.registerPlugin(ScrollTrigger);
+// Initialize GSAP plugins
+gsap.registerPlugin(ScrollTrigger, ScrollToPlugin);
 
 // Document ready
 document.addEventListener('DOMContentLoaded', function() {
@@ -586,6 +586,13 @@ function initializeImagePreview() {
     const currentPageSpan = document.getElementById('current-page');
     const endMessage = document.getElementById('end-message');
     
+    console.log('🔍 Element check:');
+    console.log('  openBtn:', openBtn ? '✅ Found' : '❌ NOT FOUND');
+    console.log('  closeBtn:', closeBtn ? '✅ Found' : '❌ NOT FOUND');
+    console.log('  modal:', modal ? '✅ Found' : '❌ NOT FOUND');
+    console.log('  leftImg:', leftImg ? '✅ Found' : '❌ NOT FOUND');
+    console.log('  rightImg:', rightImg ? '✅ Found' : '❌ NOT FOUND');
+    
     if (!modal) {
         console.warn('⚠️ Book modal not found');
         return;
@@ -593,12 +600,17 @@ function initializeImagePreview() {
     
     // Open book
     openBtn?.addEventListener('click', () => {
-        console.log('📖 Opening book preview');
-        modal.classList.add('active');
-        document.body.style.overflow = 'hidden';
-        currentSpread = 0;
-        isFlipping = false;
-        updateBookDisplay();
+        console.log('📖 "Read Preview" button clicked');
+        try {
+            modal.classList.add('active');
+            document.body.style.overflow = 'hidden';
+            currentSpread = 0;
+            isFlipping = false;
+            updateBookDisplay();
+            console.log('✅ Book preview opened from "Read Preview" button');
+        } catch (error) {
+            console.error('❌ Error opening book:', error);
+        }
     });
     
     // Close book
@@ -688,6 +700,59 @@ function initializeImagePreview() {
         }
     });
     
+    // Make preview page thumbnails clickable - open the book preview
+    function openBookFromThumbnail() {
+        console.log('📖 Opening book from thumbnail...');
+        try {
+            modal.classList.add('active');
+            document.body.style.overflow = 'hidden';
+            currentSpread = 0;
+            isFlipping = false;
+            updateBookDisplay();
+            console.log('✅ Book preview opened successfully');
+        } catch (error) {
+            console.error('❌ Error opening book:', error);
+        }
+    }
+    
+    function attachPreviewClickHandlers() {
+        const previewPages = document.querySelectorAll('.preview-page');
+        console.log('📸 Found ' + previewPages.length + ' preview pages');
+        
+        if (previewPages.length === 0) {
+            console.warn('⚠️ No preview pages found, retrying in 500ms...');
+            setTimeout(attachPreviewClickHandlers, 500);
+            return;
+        }
+        
+        previewPages.forEach((page, index) => {
+            page.style.cursor = 'pointer';
+            page.style.transition = 'all 0.2s ease';
+            
+            page.addEventListener('click', function(e) {
+                console.log('👆 Clicked preview page ' + (index + 1));
+                openBookFromThumbnail();
+            });
+            
+            // Add hover effect
+            page.addEventListener('mouseenter', () => {
+                page.style.opacity = '0.8';
+                page.style.transform = 'scale(0.98)';
+            });
+            page.addEventListener('mouseleave', () => {
+                page.style.opacity = '1';
+                page.style.transform = 'scale(1)';
+            });
+        });
+        
+        console.log('✅ Preview click handlers attached to ' + previewPages.length + ' pages');
+    }
+    
+    // Attach handlers with retries
+    attachPreviewClickHandlers();
+    setTimeout(attachPreviewClickHandlers, 500);
+    setTimeout(attachPreviewClickHandlers, 1000);
+    
     console.log('✨ Book preview initialized with ' + pages.length + ' spreads');
 }
 
@@ -716,8 +781,36 @@ function updatePageButtons() {
 
 // Navigation Functions
 function initializeNavigation() {
-    // Mobile navigation toggle (if needed)
-    // Add any specific navigation logic here
+    // Smooth scrolling for all anchor links - using GSAP with fallback
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+        anchor.addEventListener('click', function (e) {
+            // Check if it's a valid anchor with ID
+            const targetId = this.getAttribute('href').substring(1);
+            const targetElement = document.getElementById(targetId);
+            
+            if (targetElement) {
+                e.preventDefault();
+                // Try GSAP scrollTo, fallback to native scrollIntoView
+                try {
+                    if (gsap && gsap.to) {
+                        gsap.to(window, {
+                            duration: 0.8,
+                            scrollTo: {
+                                y: targetElement,
+                                autoKill: true
+                            },
+                            ease: 'power2.inOut'
+                        });
+                    } else {
+                        targetElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    }
+                } catch (err) {
+                    // Fallback to native scroll
+                    targetElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }
+            }
+        });
+    });
 }
 
 // Interactive Elements
@@ -770,14 +863,12 @@ function initializeForm() {
     }
 }
 
-// Production Backend URL
-const API_URL = 'https://backendcode-with-destiny.onrender.com';
-
 async function createOrderViaBackend(name, email, whatsapp, amount, form, successMessage, submitBtn) {
     try {
+        // Step 1: Create order via backend
         console.log('📝 Creating order...');
         
-        const orderResponse = await fetch(`${API_URL}/api/orders/create`, {
+        const orderResponse = await fetch('https://backendcode-with-destiny.onrender.com/api/orders/create', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -872,7 +963,7 @@ async function verifyPaymentViaBackend(razorpayOrderId, razorpayPaymentId, razor
     try {
         console.log('🔐 Verifying payment...');
         
-        const verifyResponse = await fetch(`${API_URL}/api/payments/verify`, {
+        const verifyResponse = await fetch('https://backendcode-with-destiny.onrender.com/api/payments/verify', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -1272,4 +1363,3 @@ window.addEventListener('scroll', () => {
     document.body.classList.remove('scrolling');
   }, 300); // Adjust timeout as needed
 });
-
