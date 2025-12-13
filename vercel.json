@@ -1,0 +1,9 @@
+{
+  "buildCommand": "echo 'Frontend ready'",
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "/index.html"
+    }
+  ]
+}
