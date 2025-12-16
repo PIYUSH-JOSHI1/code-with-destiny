@@ -6,6 +6,10 @@ let pdfDoc = null;
 let currentPage = 1;
 let totalPages = 0;
 let pageFlipping = false;
+let swRegistration = null;
+
+// API Configuration - PRODUCTION URL
+const API_URL = 'https://backendcode-with-destiny.onrender.com';
 
 // EmailJS Configuration
 const EMAILJS_SERVICE_ID = 'service_fg2hujo';
@@ -18,12 +22,146 @@ emailjs.init(EMAILJS_PUBLIC_KEY);
 // Initialize GSAP plugins
 gsap.registerPlugin(ScrollTrigger, ScrollToPlugin);
 
+// Register Service Worker for PWA
+function registerServiceWorker() {
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('service-worker.js')
+            .then((registration) => {
+                swRegistration = registration;
+                console.log('✅ Service Worker registered successfully');
+                
+                // Check for updates periodically
+                setInterval(() => {
+                    registration.update().catch(error => {
+                        console.log('Service Worker update check failed:', error);
+                    });
+                }, 60000); // Check every minute
+                
+                // Listen for updates
+                registration.addEventListener('updatefound', () => {
+                    const newWorker = registration.installing;
+                    newWorker.addEventListener('statechange', () => {
+                        if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                            console.log('📦 New version available! Reload to update.');
+                            showUpdateNotification();
+                        }
+                    });
+                });
+            })
+            .catch((error) => {
+                console.log('❌ Service Worker registration failed:', error);
+            });
+    }
+}
+
+// Show update notification
+function showUpdateNotification() {
+    // Create a simple notification banner
+    const banner = document.createElement('div');
+    banner.style.cssText = `
+        position: fixed;
+        top: 70px;
+        left: 0;
+        right: 0;
+        background: linear-gradient(135deg, #DAA520, #D2691E);
+        color: white;
+        padding: 12px 20px;
+        text-align: center;
+        font-weight: bold;
+        z-index: 9998;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    `;
+    banner.innerHTML = `
+        <span>📦 New version available!</span>
+        <button onclick="location.reload()" style="
+            background: white;
+            color: #B8462E;
+            border: none;
+            padding: 6px 16px;
+            border-radius: 20px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 12px;
+        ">Reload</button>
+    `;
+    document.body.appendChild(banner);
+    
+    // Auto-dismiss after 10 seconds
+    setTimeout(() => {
+        banner.remove();
+    }, 10000);
+}
+
+// Handle Install Prompt
+let deferredPrompt;
+const installButton = document.createElement('button');
+installButton.id = 'pwa-install-button';
+installButton.style.cssText = `
+    position: fixed;
+    bottom: 30px;
+    right: 30px;
+    background: linear-gradient(135deg, #B8462E, #D2691E);
+    color: white;
+    border: none;
+    padding: 12px 24px;
+    border-radius: 50px;
+    font-size: 16px;
+    font-weight: bold;
+    cursor: pointer;
+    z-index: 9997;
+    box-shadow: 0 6px 20px rgba(184, 70, 46, 0.4);
+    display: none;
+    transition: all 0.3s ease;
+`;
+installButton.innerHTML = '⬇️ Install App';
+installButton.addEventListener('mouseenter', () => {
+    installButton.style.transform = 'translateY(-3px) scale(1.05)';
+});
+installButton.addEventListener('mouseleave', () => {
+    installButton.style.transform = 'scale(1)';
+});
+
+window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferredPrompt = e;
+    installButton.style.display = 'block';
+    console.log('📲 Install prompt ready');
+});
+
+installButton.addEventListener('click', async () => {
+    if (deferredPrompt) {
+        deferredPrompt.prompt();
+        const { outcome } = await deferredPrompt.userChoice;
+        console.log(`User response: ${outcome}`);
+        deferredPrompt = null;
+        installButton.style.display = 'none';
+    }
+});
+
+window.addEventListener('appinstalled', () => {
+    console.log('✅ PWA installed successfully!');
+    deferredPrompt = null;
+    installButton.style.display = 'none';
+    
+    // Track installation
+    if (navigator.sendBeacon) {
+        navigator.sendBeacon('/api/pwa-installed', JSON.stringify({ timestamp: new Date() }));
+    }
+});
+
 // Document ready
 document.addEventListener('DOMContentLoaded', function() {
+    registerServiceWorker();
+    document.body.appendChild(installButton);
     initializeWebsite();
 });
 // If script is loaded after DOMContentLoaded, ensure initialization still runs
 if (document.readyState !== 'loading') {
+    registerServiceWorker();
+    if (document.body) document.body.appendChild(installButton);
     initializeWebsite();
 }
 
@@ -869,7 +1007,7 @@ async function createOrderViaBackend(name, email, whatsapp, amount, form, succes
         // Step 1: Create order via backend
         console.log('📝 Creating order...');
         
-        const orderResponse = await fetch('https://backendcode-with-destiny.onrender.com/api/orders/create', {
+        const orderResponse = await fetch(`${API_URL}/api/orders/create`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -900,15 +1038,15 @@ async function createOrderViaBackend(name, email, whatsapp, amount, form, succes
         
         const orderId = orderData.order_id;
         
-        // If free purchase, send book directly
+        // If free purchase, send book directly via EmailJS
         if (orderData.is_free) {
-            console.log('🎁 Free book - sending directly');
-            await sendBookViaBackend(orderId, email, name, 0);
+            console.log('🎁 Free book - sending via EmailJS');
+            await sendBookViaEmailJS(email, name, orderId, 0);
             showSuccessMessage(form, successMessage, email, whatsapp, submitBtn);
             return;
         }
         
-        // Step 2: Initialize Razorpay payment
+        // Step 2: Initialize Razorpay payment for paid orders
         console.log('💳 Initializing Razorpay payment...');
         
         const options = {
@@ -940,8 +1078,6 @@ async function createOrderViaBackend(name, email, whatsapp, amount, form, succes
                     name,
                     amount
                 );
-                
-                showSuccessMessage(form, successMessage, email, whatsapp, submitBtn);
             },
             modal: {
                 ondismiss: function() {
@@ -972,16 +1108,19 @@ async function verifyPaymentViaBackend(razorpayOrderId, razorpayPaymentId, razor
     try {
         console.log('🔐 Verifying payment...');
         
-        const verifyResponse = await fetch('https://backendcode-with-destiny.onrender.com/api/payments/verify', {
+        const verifyResponse = await fetch(`${API_URL}/api/payments/verify`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
             },
+            credentials: 'include',
             body: JSON.stringify({
                 razorpay_order_id: razorpayOrderId,
                 razorpay_payment_id: razorpayPaymentId,
                 razorpay_signature: razorpaySignature,
-                order_id: orderId
+                order_id: orderId,
+                email: email,
+                user_name: userName
             })
         });
         
@@ -990,6 +1129,10 @@ async function verifyPaymentViaBackend(razorpayOrderId, razorpayPaymentId, razor
         if (!verifyResponse.ok) {
             const errorText = await verifyResponse.text();
             console.error('❌ Server error response:', errorText);
+            
+            if (verifyResponse.status === 0 || verifyResponse.headers.get('content-type')?.includes('text/html')) {
+                throw new Error('🌐 Backend server error. Please ensure your backend is running and CORS is configured.\n\nBackend URL: ' + API_URL + '\n\nContact support if this persists.');
+            }
             throw new Error(`Server error: ${verifyResponse.status} ${verifyResponse.statusText}`);
         }
         
@@ -1001,47 +1144,59 @@ async function verifyPaymentViaBackend(razorpayOrderId, razorpayPaymentId, razor
         
         console.log('✅ Payment verified successfully!');
         
-        // Send book to user with EmailJS
-        await sendBookViaBackend(orderId, email, userName, amount);
+        // ✅ SEND EMAIL VIA EMAILJS AFTER PAYMENT VERIFIED
+        const emailSent = await sendBookViaEmailJS(email, userName, orderId, amount);
+        
+        // Show success message
+        const form = document.getElementById('purchase-form');
+        const successMessage = document.getElementById('success-message');
+        const submitBtn = form.querySelector('button[type="submit"]');
+        
+        showSuccessMessage(form, successMessage, email, 'Your WhatsApp', submitBtn, emailSent);
         
     } catch (error) {
         console.error('❌ Payment verification error:', error);
-        alert('❌ Payment verification failed: ' + error.message);
+        alert('❌ Payment verification failed:\n\n' + error.message);
     }
 }
 
-async function sendBookViaBackend(orderId, email, userName = 'Valued Customer', amount = 0) {
+// ✅ NEW FUNCTION: Send book via EmailJS
+async function sendBookViaEmailJS(email, userName, orderId, amount) {
     try {
-        console.log('📧 Sending book via EmailJS...');
+        console.log('📧 Sending book via EmailJS to:', email);
         
-        // Send email via EmailJS
+        const templateParams = {
+            to_email: email,
+            user_name: userName,
+            order_id: orderId,
+            amount: amount,
+            purchase_date: new Date().toLocaleDateString()
+        };
+
         const response = await emailjs.send(
             EMAILJS_SERVICE_ID,
             EMAILJS_TEMPLATE_ID,
-            {
-                to_email: email,
-                user_name: userName,
-                order_id: orderId,
-                amount: amount
-            }
+            templateParams
         );
         
+        console.log('📧 EmailJS response:', response);
+        
         if (response.status === 200) {
-            console.log('✅ Email sent successfully via EmailJS!');
+            console.log('✅ Email sent successfully!');
             return true;
-        } else {
-            console.warn('⚠️ Email send response:', response);
-            return false;
         }
         
+        return false;
+        
     } catch (error) {
-        console.error('❌ Error sending email:', error);
-        alert('✅ Payment successful! Book will be sent to your email shortly.');
+        console.error('❌ Email error:', error);
+        console.error('EmailJS Service ID:', EMAILJS_SERVICE_ID);
+        console.error('EmailJS Template ID:', EMAILJS_TEMPLATE_ID);
         return false;
     }
 }
 
-function showSuccessMessage(form, successMessage, email, whatsapp, submitBtn) {
+function showSuccessMessage(form, successMessage, email, whatsapp, submitBtn, emailSent = true) {
     // Hide form
     form.style.display = 'none';
     
@@ -1051,6 +1206,15 @@ function showSuccessMessage(form, successMessage, email, whatsapp, submitBtn) {
     // Update success message content
     document.getElementById('success-email').textContent = email;
     document.getElementById('success-whatsapp').textContent = '📱 ' + whatsapp;
+    
+    // Add email status indicator
+    const emailStatus = emailSent ? '✅ Email sent!' : '⚠️ Check email after page reload';
+    const statusElement = document.createElement('p');
+    statusElement.style.marginTop = '10px';
+    statusElement.style.fontSize = '14px';
+    statusElement.style.color = emailSent ? '#27ae60' : '#f39c12';
+    statusElement.textContent = '📬 ' + emailStatus;
+    successMessage.appendChild(statusElement);
     
     // Add celebration animation
     createCelebrationEffect();
